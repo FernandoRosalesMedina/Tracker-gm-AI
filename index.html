@@ -2170,5 +2170,243 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
       </script>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+  
+    // ⚠️ TU configuración real de Firebase
+    const firebaseConfig = { /* ... */ };
+  
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+  
+    // (a) Estado de conexión a RTDB (.info/connected)
+    onValue(ref(db, ".info/connected"), (snap) => {
+      const ok = snap.val() === true;
+      let b = document.getElementById("pingEstado");
+      if (!b) {
+        b = document.createElement('div'); b.id='pingEstado';
+        b.style.cssText="position:fixed;right:8px;bottom:8px;background:#0b5;color:#fff;padding:6px 10px;border-radius:6px;font:12px sans-serif;z-index:9999";
+        document.body.appendChild(b);
+      }
+      b.textContent = ok ? "RTDB: Conectado" : "RTDB: Desconectado";
+      console.log("Conectado a RTDB:", ok);
+    });
+  
+    // (b) Suscripción en tiempo real a una ruta de prueba
+    const testRef = ref(db, 'gm_test');
+    onValue(testRef, (snap) => {
+      const data = snap.val() || {};
+      console.log("Datos en tiempo real:", data);
+      let d = document.getElementById("pingData");
+      if (!d) {
+        d = document.createElement("div"); d.id="pingData";
+        d.style.cssText="position:fixed;left:8px;bottom:8px;background:#004aad;color:#fff;padding:6px 10px;border-radius:6px;font:12px sans-serif;z-index:9999";
+        document.body.appendChild(d);
+      }
+      d.textContent = "Items en RTDB: " + Object.keys(data).length;
+    });
+  
+    // (c) Botón para generar cambios y verlos en ambos dispositivos
+    let btn = document.getElementById("pingBtn");
+    if (!btn) {
+      btn = document.createElement("button"); btn.id="pingBtn";
+      btn.textContent="Agregar item de prueba";
+      btn.style.cssText="position:fixed;left:8px;bottom:44px;background:#0a7cff;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;z-index:9999";
+      document.body.appendChild(btn);
+    }
+    btn.onclick = async () => { await set(push(testRef), { ts: Date.now(), by: "test" }); };
+  </script>
+  
+
+<!-- --- M365 Copilot: RTDB real-time synchronization patch (adds listeners + writes) --- -->
+<script type="module">
+  /*
+    Este bloque NO rompe tu UI. Agrega sincronización en tiempo real con Firebase RTDB
+    para actividades, horas, checklist, datos personales y equipo.
+    - Mantén una sola versión del SDK. Usamos v10.7.1 aquí.
+    - Si ya importaste Firebase en otro bloque, usamos getApps() para evitar doble init.
+    - Llama automáticamente a attachRealtimeListeners() después del login.
+  */
+  import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getDatabase, ref, onValue, push, set, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+  // ⚠️ Config de tu proyecto (la misma que ya existe en tu archivo)
+  const firebaseConfig = {
+    apiKey: "AIzaSyCmNjNLMiVAcRqLTQ4uwhjP3POf5YGRmNg",
+    authDomain: "sistem-gm-ai.firebaseapp.com",
+    databaseURL: "https://sistem-gm-ai-default-rtdb.firebaseio.com",
+    projectId: "sistem-gm-ai",
+    storageBucket: "sistem-gm-ai.firebasestorage.app",
+    messagingSenderId: "974961642793",
+    appId: "1:974961642793:web:55c1e67ff85431c7807b38"
+  };
+
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // Base de datos
+  const BASE = 'gm_app/v1';
+  const _userPath   = (sub) => ref(db, `${BASE}/users/${window.currentUser}/${sub}`);
+  const _globalPath = (sub) => ref(db, `${BASE}/${sub}`);
+
+  // ==== LISTENERS en tiempo real (se adjuntan tras login) ====
+  window.attachRealtimeListeners = function attachRealtimeListeners(){
+    if (!window.currentUser) return; // requiere usuario logueado
+
+    // ACTIVIDADES (usuario)
+    onValue(_userPath('activities'), (snap) => {
+      const obj = snap.val() || {};
+      const arr = Object.values(obj);
+      if (window.activities) { window.activities[window.currentUser] = arr; }
+      if (typeof window.renderMyActivities === 'function') window.renderMyActivities();
+    });
+
+    // HORAS / TIME ENTRIES (usuario)
+    onValue(_userPath('timeEntries'), (snap) => {
+      const obj = snap.val() || {};
+      const arr = Object.values(obj);
+      if (window.timeEntries) { window.timeEntries[window.currentUser] = arr; }
+      if (typeof window.renderTimeEntriesList === 'function') window.renderTimeEntriesList();
+      if (typeof window.recalcHoursSummary === 'function') window.recalcHoursSummary();
+    });
+
+    // CHECKLIST (usuario)
+    onValue(_userPath('checklist'), (snap) => {
+      const data = snap.val() || {};
+      if (window.checklists) { window.checklists[window.currentUser] = data; }
+      if (typeof window.renderChecklist === 'function') window.renderChecklist();
+    });
+
+    // DATOS PERSONALES (usuario)
+    onValue(_userPath('personalData'), (snap) => {
+      const data = snap.val() || {};
+      if (window.personalData) { window.personalData[window.currentUser] = data; }
+      if (typeof window.refreshPersonalUI === 'function') window.refreshPersonalUI();
+    });
+
+    // EQUIPO (GLOBAL)
+    onValue(_globalPath('teamMembers'), (snap) => {
+      const data = snap.val();
+      // si no hay datos en RTDB, conserva defaultTeamMembers si existe
+      if (data) window.teamMembers = data; 
+      if (typeof window.renderTeamGridSupervisor === 'function') window.renderTeamGridSupervisor();
+      if (typeof window.fillUserSelect === 'function') window.fillUserSelect();
+    });
+  }
+
+  // ==== ESCRITURAS: sobre-escriben funciones globales para usar RTDB ====
+
+  // Agregar actividad
+  const _addActivity = window.addActivity;
+  window.addActivity = async function addActivity(e){
+    try {
+      e?.preventDefault?.();
+      const data = {
+        type: document.getElementById('activityType')?.value,
+        priority: document.getElementById('activityPriority')?.value,
+        title: document.getElementById('activityTitle')?.value,
+        project: document.getElementById('projectName')?.value || null,
+        startDate: document.getElementById('activityStartDate')?.value,
+        status: document.getElementById('activityStatus')?.value,
+        endDate: document.getElementById('activityEndDate')?.value || null,
+        description: document.getElementById('activityDescription')?.value,
+        ts: Date.now()
+      };
+      const newRef = push(_userPath('activities'));
+      await set(newRef, { id: newRef.key, ...data });
+      if (e?.target?.reset) e.target.reset();
+    } catch(err){ console.error('addActivity RTDB error', err); _addActivity?.(e); }
+  }
+
+  // Registrar entrada
+  const _registerEntry = window.registerEntry;
+  window.registerEntry = async function registerEntry(e){
+    try {
+      e?.preventDefault?.();
+      const data = {
+        date:  document.getElementById('entryDate')?.value,
+        entry: document.getElementById('entryTime')?.value,
+        exit:  null, hours: 0, pending: 0, ts: Date.now()
+      };
+      const newRef = push(_userPath('timeEntries'));
+      await set(newRef, { id: newRef.key, ...data });
+      if (e?.target?.reset) e.target.reset();
+    } catch(err){ console.error('registerEntry RTDB error', err); _registerEntry?.(e); }
+  }
+
+  // Guardar salida (usa tu lógica de cálculo si existe calcHours)
+  const _saveExitTime = window.saveExitTime;
+  window.saveExitTime = async function saveExitTime(e){
+    try {
+      e?.preventDefault?.();
+      const id   = document.getElementById('editEntryId')?.value;
+      const exit = document.getElementById('editExitTime')?.value;
+      const calc = (typeof window.calcHours === 'function') ? (window.calcHours(id, exit) || {}) : {};
+      await update(ref(db, `${BASE}/users/${window.currentUser}/timeEntries/${id}`), { exit, ...calc });
+      if (typeof window.closeModal === 'function') window.closeModal('editTimeEntryModal');
+    } catch(err){ console.error('saveExitTime RTDB error', err); _saveExitTime?.(e); }
+  }
+
+  // Checklist toggle
+  const _saveChecklist = window.saveChecklist;
+  window.saveChecklist = async function saveChecklist(itemKey, checked){
+    try { await set(ref(db, `${BASE}/users/${window.currentUser}/checklist/${itemKey}`), !!checked); }
+    catch(err){ console.error('saveChecklist RTDB error', err); _saveChecklist?.(itemKey, checked); }
+  }
+
+  // Datos personales
+  const _savePersonalData = window.savePersonalData;
+  window.savePersonalData = async function savePersonalData(){
+    try {
+      const endMaterias = document.getElementById('endMateriasFecha')?.value || null;
+      const titulacion  = document.getElementById('titulacionFecha')?.value || null;
+      const schedule = {
+        monday:    document.getElementById('schedule_monday')?.value || '',
+        tuesday:   document.getElementById('schedule_tuesday')?.value || '',
+        wednesday: document.getElementById('schedule_wednesday')?.value || '',
+        thursday:  document.getElementById('schedule_thursday')?.value || '',
+        friday:    document.getElementById('schedule_friday')?.value || '',
+        saturday:  document.getElementById('schedule_saturday')?.value || '',
+        sunday:    document.getElementById('schedule_sunday')?.value || ''
+      };
+      await set(_userPath('personalData'), { endMaterias, titulacion, schedule });
+    } catch(err){ console.error('savePersonalData RTDB error', err); _savePersonalData?.(); }
+  }
+
+  // Equipo (global)
+  const _addMember = window.addMember;
+  window.addMember = async function addMember(e){
+    try {
+      e?.preventDefault?.();
+      const name  = document.getElementById('newMemberName')?.value;
+      const role  = document.getElementById('newMemberRole')?.value;
+      const isLeader = document.getElementById('newMemberIsLeader')?.checked || false;
+      const newRef = push(_globalPath('teamMembers'));
+      await set(newRef, { id: newRef.key, name, role, isLeader, photo: null });
+      if (typeof window.closeModal === 'function') window.closeModal('addMemberModal');
+    } catch(err){ console.error('addMember RTDB error', err); _addMember?.(e); }
+  }
+
+  const _saveEditMember = window.saveEditMember;
+  window.saveEditMember = async function saveEditMember(e){
+    try {
+      e?.preventDefault?.();
+      const id   = document.getElementById('editMemberId')?.value;
+      const name = document.getElementById('editMemberName')?.value;
+      const role = document.getElementById('editMemberRole')?.value;
+      await update(ref(db, `${BASE}/teamMembers/${id}`), { name, role });
+      if (typeof window.closeModal === 'function') window.closeModal('editMemberModal');
+    } catch(err){ console.error('saveEditMember RTDB error', err); _saveEditMember?.(e); }
+  }
+
+  // Adjuntar listeners automáticamente tras login (pequeño delay para no interferir)
+  document.getElementById('loginForm')?.addEventListener('submit', () => {
+    setTimeout(() => { if (typeof window.attachRealtimeListeners === 'function') window.attachRealtimeListeners(); }, 600);
+  });
+</script>
+<!-- --- /M365 Copilot patch --- -->
+
 </body>
 </html>
