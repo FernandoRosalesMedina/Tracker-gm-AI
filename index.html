@@ -2151,68 +2151,306 @@
         }
     </script>
     <script type="module">
-  // ... (ya tienes app, db, BASE, _userPath y _globalPath definidos)
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+      
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+          apiKey: "AIzaSyCmNjNLMiVAcRqLTQ4uwhjP3POf5YGRmNg",
+          authDomain: "sistem-gm-ai.firebaseapp.com",
+          databaseURL: "https://sistem-gm-ai-default-rtdb.firebaseio.com",
+          projectId: "sistem-gm-ai",
+          storageBucket: "sistem-gm-ai.firebasestorage.app",
+          messagingSenderId: "974961642793",
+          appId: "1:974961642793:web:55c1e67ff85431c7807b38"
+        };
+      
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+      </script>
 
-  // ================== AGREGACIÓN GLOBAL DE ACTIVIDADES ==================
-  // Estructura destino en memoria (global)
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+  
+    // ⚠️ TU configuración real de Firebase
+    const firebaseConfig = { /* ... */ };
+  
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+  
+    // (a) Estado de conexión a RTDB (.info/connected)
+    onValue(ref(db, ".info/connected"), (snap) => {
+      const ok = snap.val() === true;
+      let b = document.getElementById("pingEstado");
+      if (!b) {
+        b = document.createElement('div'); b.id='pingEstado';
+        b.style.cssText="position:fixed;right:8px;bottom:8px;background:#0b5;color:#fff;padding:6px 10px;border-radius:6px;font:12px sans-serif;z-index:9999";
+        document.body.appendChild(b);
+      }
+      b.textContent = ok ? "RTDB: Conectado" : "RTDB: Desconectado";
+      console.log("Conectado a RTDB:", ok);
+    });
+  
+    // (b) Suscripción en tiempo real a una ruta de prueba
+    const testRef = ref(db, 'gm_test');
+    onValue(testRef, (snap) => {
+      const data = snap.val() || {};
+      console.log("Datos en tiempo real:", data);
+      let d = document.getElementById("pingData");
+      if (!d) {
+        d = document.createElement("div"); d.id="pingData";
+        d.style.cssText="position:fixed;left:8px;bottom:8px;background:#004aad;color:#fff;padding:6px 10px;border-radius:6px;font:12px sans-serif;z-index:9999";
+        document.body.appendChild(d);
+      }
+      d.textContent = "Items en RTDB: " + Object.keys(data).length;
+    });
+  
+    // (c) Botón para generar cambios y verlos en ambos dispositivos
+    let btn = document.getElementById("pingBtn");
+    if (!btn) {
+      btn = document.createElement("button"); btn.id="pingBtn";
+      btn.textContent="Agregar item de prueba";
+      btn.style.cssText="position:fixed;left:8px;bottom:44px;background:#0a7cff;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;z-index:9999";
+      document.body.appendChild(btn);
+    }
+    btn.onclick = async () => { await set(push(testRef), { ts: Date.now(), by: "test" }); };
+  </script>
+  
+
+<!-- === PATCH v2: RTDB sync + vista global (insertado por M365 Copilot) === -->
+<script type="module">
+  import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getDatabase, ref, onValue, push, set, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+  // Configuración de Firebase (igual a la que ya usa tu proyecto)
+  const firebaseConfig = {
+    apiKey: "AIzaSyCmNjNLMiVAcRqLTQ4uwhjP3POf5YGRmNg",
+    authDomain: "sistem-gm-ai.firebaseapp.com",
+    databaseURL: "https://sistem-gm-ai-default-rtdb.firebaseio.com",
+    projectId: "sistem-gm-ai",
+    storageBucket: "sistem-gm-ai.firebasestorage.app",
+    messagingSenderId: "974961642793",
+    appId: "1:974961642793:web:55c1e67ff85431c7807b38"
+  };
+
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // Helpers
+  const BASE      = 'gm_app/v1';
+  const $id       = (id) => document.getElementById(id);
+  const userPath  = (sub) => ref(db, `${BASE}/users/${window.currentUser}/${sub}`);
+  const globalRef = (sub) => ref(db, `${BASE}/${sub}`);
+
+  // ========= LISTENERS por usuario (se activan tras login) =========
+  window.attachRealtimeListeners = function attachRealtimeListeners () {
+    if (!window.currentUser) return;
+
+    // ACTIVIDADES (usuario actual)
+    onValue(userPath('activities'), (snap) => {
+      const arr = Object.values(snap.val() || {});
+      if (window.activities) window.activities[window.currentUser] = arr;
+      if (typeof window.renderMyActivities === 'function') window.renderMyActivities();
+    });
+
+    // HORAS / TIME ENTRIES
+    onValue(userPath('timeEntries'), (snap) => {
+      const arr = Object.values(snap.val() || {});
+      if (window.timeEntries) window.timeEntries[window.currentUser] = arr;
+      if (typeof window.renderTimeEntriesList === 'function') window.renderTimeEntriesList();
+      if (typeof window.recalcHoursSummary === 'function') window.recalcHoursSummary();
+    });
+
+    // CHECKLIST
+    onValue(userPath('checklist'), (snap) => {
+      const obj = snap.val() || {};
+      if (window.checklists) window.checklists[window.currentUser] = obj;
+      if (typeof window.renderChecklist === 'function') window.renderChecklist();
+    });
+
+    // DATOS PERSONALES
+    onValue(userPath('personalData'), (snap) => {
+      const obj = snap.val() || {};
+      if (window.personalData) window.personalData[window.currentUser] = obj;
+      if (typeof window.refreshPersonalUI === 'function') window.refreshPersonalUI();
+    });
+
+    // EQUIPO (GLOBAL)
+    onValue(globalRef('teamMembers'), (snap) => {
+      const obj = snap.val();
+      if (obj) window.teamMembers = obj;
+      if (typeof window.renderTeamGridSupervisor === 'function') window.renderTeamGridSupervisor();
+      if (typeof window.fillUserSelect === 'function') window.fillUserSelect();
+    });
+  };
+
+  // ========= ESCRITURAS: sobreescribe funciones para grabar en RTDB =========
+  // Agregar actividad
+  const _addActivity = window.addActivity;
+  window.addActivity = async (e) => {
+    try {
+      e?.preventDefault?.();
+      const data = {
+        type:       $id('activityType')?.value,
+        priority:   $id('activityPriority')?.value,
+        title:      $id('activityTitle')?.value,
+        project:    $id('projectName')?.value || null,
+        startDate:  $id('activityStartDate')?.value,
+        status:     $id('activityStatus')?.value,
+        endDate:    $id('activityEndDate')?.value || null,
+        description:$id('activityDescription')?.value,
+        ts: Date.now()
+      };
+      const r = push(userPath('activities'));
+      await set(r, { id: r.key, ...data });
+      e?.target?.reset?.();
+    } catch (err) { console.error('addActivity RTDB error', err); _addActivity?.(e); }
+  };
+
+  // Registrar entrada
+  const _registerEntry = window.registerEntry;
+  window.registerEntry = async (e) => {
+    try {
+      e?.preventDefault?.();
+      const data = {
+        date:  $id('entryDate')?.value,
+        entry: $id('entryTime')?.value,
+        exit:  null,
+        hours: 0,
+        pending: 0,
+        ts: Date.now()
+      };
+      const r = push(userPath('timeEntries'));
+      await set(r, { id: r.key, ...data });
+      e?.target?.reset?.();
+    } catch (err) { console.error('registerEntry RTDB error', err); _registerEntry?.(e); }
+  };
+
+  // Guardar salida (usa calcHours(id, exit) si existe)
+  const _saveExitTime = window.saveExitTime;
+  window.saveExitTime = async (e) => {
+    try {
+      e?.preventDefault?.();
+      const id   = $id('editEntryId')?.value || $id('editActivityId')?.value;
+      const exit = $id('editExitTime')?.value;
+      const calc = (typeof window.calcHours === 'function') ? (window.calcHours(id, exit) || {}) : {};
+      await update(ref(db, `${BASE}/users/${window.currentUser}/timeEntries/${id}`), { exit, ...calc });
+      if (typeof window.closeModal === 'function') window.closeModal('editTimeEntryModal');
+    } catch (err) { console.error('saveExitTime RTDB error', err); _saveExitTime?.(e); }
+  };
+
+  // Checklist
+  const _saveChecklist = window.saveChecklist;
+  window.saveChecklist = async (itemKey, checked) => {
+    try { await set(ref(db, `${BASE}/users/${window.currentUser}/checklist/${itemKey}`), !!checked); }
+    catch (err){ console.error('saveChecklist RTDB error', err); _saveChecklist?.(itemKey, checked); }
+  };
+
+  // Datos personales
+  const _savePersonalData = window.savePersonalData;
+  window.savePersonalData = async () => {
+    try {
+      const data = {
+        endMaterias: $id('endMateriasFecha')?.value || null,
+        titulacion:  $id('titulacionFecha')?.value || null,
+        schedule: {
+          monday:    $id('schedule_monday')?.value || '',
+          tuesday:   $id('schedule_tuesday')?.value || '',
+          wednesday: $id('schedule_wednesday')?.value || '',
+          thursday:  $id('schedule_thursday')?.value || '',
+          friday:    $id('schedule_friday')?.value || '',
+          saturday:  $id('schedule_saturday')?.value || '',
+          sunday:    $id('schedule_sunday')?.value || ''
+        }
+      };
+      await set(userPath('personalData'), data);
+    } catch (err) { console.error('savePersonalData RTDB error', err); _savePersonalData?.(); }
+  };
+
+  // Equipo (global)
+  const _addMember = window.addMember;
+  window.addMember = async (e) => {
+    try {
+      e?.preventDefault?.();
+      const name  = $id('newMemberName')?.value;
+      const role  = $id('newMemberRole')?.value;
+      const isLeader = $id('newMemberIsLeader')?.checked || false;
+      const r = push(globalRef('teamMembers'));
+      await set(r, { id: r.key, name, role, isLeader, photo: null });
+      if (typeof window.closeModal === 'function') window.closeModal('addMemberModal');
+    } catch (err) { console.error('addMember RTDB error', err); _addMember?.(e); }
+  };
+
+  const _saveEditMember = window.saveEditMember;
+  window.saveEditMember = async (e) => {
+    try {
+      e?.preventDefault?.();
+      const id   = $id('editMemberId')?.value;
+      const name = $id('editMemberName')?.value;
+      const role = $id('editMemberRole')?.value;
+      await update(ref(db, `${BASE}/teamMembers/${id}`), { name, role });
+      if (typeof window.closeModal === 'function') window.closeModal('editMemberModal');
+    } catch (err) { console.error('saveEditMember RTDB error', err); _saveEditMember?.(e); }
+  };
+
+  // ========= Hook: tras login, conecta listeners =========
+  $id('loginForm')?.addEventListener('submit', () => {
+    setTimeout(() => window.attachRealtimeListeners?.(), 600);
+  });
+
+  // ========= AGREGACIÓN GLOBAL (todas las actividades) =========
   window.allActivities = [];
-
-  // Suscripción global (todas las actividades de todos los usuarios)
-  const usersRef = ref(db, `${BASE}/users`);
-  onValue(usersRef, (snap) => {
+  onValue(ref(db, `${BASE}/users`), (snap) => {
     const users = snap.val() || {};
     const merged = [];
     for (const [userName, buckets] of Object.entries(users)) {
-      const actsObj = (buckets && buckets.activities) ? buckets.activities : {};
-      for (const obj of Object.values(actsObj)) {
-        merged.push({ user: userName, ...obj });
-      }
+      const acts = (buckets && buckets.activities) ? buckets.activities : {};
+      for (const obj of Object.values(acts)) merged.push({ user: userName, ...obj });
     }
-    // Ordena por fecha/hora de creación (ts) descendente
-    merged.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    merged.sort((a,b) => (b.ts||0) - (a.ts||0));
     window.allActivities = merged;
-    renderAllActivities();        // pinta la lista global
-    renderGlobalStats?.();        // opcional: actualiza tarjetas de totales si ya existen
-  });
 
-  // Render para el Tab "Supervisor → Todas las actividades"
-  window.renderAllActivities = function renderAllActivities() {
-    const cont = document.getElementById('allActivitiesList');
-    if (!cont) return;
-    const items = (window.allActivities || []).map(a => {
-      const status = a.status === 'closed' ? 'CERRADA' : 'ABIERTA';
-      const pri    = a.priority ? `P${a.priority}` : '';
-      const date   = a.startDate || '';
-      const title  = a.title || '(sin título)';
-      const user   = a.user || '(usuario)';
-      return `
-        <div class="activity-item ${a.priority ? `priority-${a.priority}-bg` : ''}">
-          <div style="display:flex; justify-content:space-between; align-items:center">
-            <div>
-              <div style="font-weight:700">${title}</div>
-              <div style="font-size:12px; opacity:.8">👤 ${user} • 📅 ${date} • ⭐ ${pri}</div>
+    // Pinta tab "Supervisor → Todas las actividades"
+    const cont = $id('allActivitiesList');
+    if (cont) {
+      cont.innerHTML = (merged||[]).map(a => {
+        const status = a.status === 'closed' ? 'CERRADA' : 'ABIERTA';
+        const pri    = a.priority ? `P${a.priority}` : '';
+        const date   = a.startDate || '';
+        const title  = a.title || '(sin título)';
+        const user   = a.user || '(usuario)';
+        return `
+          <div class="activity-item ${a.priority ? `priority-${a.priority}-bg` : ''}">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <div style="font-weight:700">${title}</div>
+                <div style="font-size:12px; opacity:.8">👤 ${user} • 📅 ${date} • ⭐ ${pri}</div>
+              </div>
+              <span class="status-badge ${a.status === 'closed' ? 'status-closed' : 'status-open'}">${status}</span>
             </div>
-            <span class="status-badge ${a.status === 'closed' ? 'status-closed' : 'status-open'}">${status}</span>
-          </div>
-          ${a.description ? `<div style="margin-top:8px; color:#555">${a.description}</div>` : ''}
-        </div>
-      `;
-    }).join('');
-    cont.innerHTML = items || `<div style="color:#666">No hay actividades registradas.</div>`;
-  };
+            ${a.description ? `<div style=\"margin-top:8px; color:#555\">${a.description}</div>` : ''}
+          </div>`;
+      }).join('') || '<div style="color:#666">No hay actividades registradas.</div>';
+    }
 
-  // (Opcional) Actualiza las tarjetas del dashboard de supervisor si existen
-  window.renderGlobalStats = function renderGlobalStats() {
-    const arr = window.allActivities || [];
-    const total = arr.length;
-    const open  = arr.filter(a => a.status !== 'closed').length;
-    const closed= total - open;
-    const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = String(val); };
+    // Inyecta la vista global en “Mis actividades” para el usuario actual (caso Iran)
+    if (window.currentUser && window.activities && Array.isArray(merged)) {
+      window.activities[window.currentUser] = merged;
+      if (typeof window.renderMyActivities === 'function') window.renderMyActivities();
+    }
+
+    // Tarjetas globales (dashboard supervisor)
+    const total = merged.length, open = merged.filter(a => a.status !== 'closed').length, closed = total - open;
+    const setText = (id, val) => { const el = $id(id); if (el) el.textContent = String(val); };
     setText('totalActivities', total);
-    setText('openActivities',  open);
-    setText('closedActivities',closed);
-  };
+    setText('openActivities', open);
+    setText('closedActivities', closed);
+  });
 </script>
+<!-- === FIN PATCH v2 === -->
 
 </body>
 </html>
